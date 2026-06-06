@@ -1,6 +1,7 @@
 import requests
 import logging
-from flask import Flask, request, jsonify
+import os
+from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -11,6 +12,18 @@ app = Flask(__name__)
 TARIFF_URL = "http://tariff-service:5001"
 INVOICE_URL = "http://invoice-service:5002"
 PAYMENT_URL = "http://payment-service:5003"
+
+# Путь к папке с HTML файлами (текущая директория)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.route('/')
+def serve_index():
+    """Главная страница"""
+    html_path = os.path.join(BASE_DIR, 'index.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+    return "index.html not found", 404
 
 @app.route('/api/order/checkout', methods=['POST'])
 def checkout():
@@ -54,7 +67,6 @@ def checkout():
                             json={"client_id": client_id, "tariff_ids": tariff_ids})
         if resp.status_code != 201:
             logger.error(f"Invoice creation failed")
-            # КОМПЕНСАЦИЯ: вернуть остатки
             compensate_reservation(tariff_ids)
             return jsonify({"error": "Invoice creation failed"}), 500
         invoice = resp.json()
@@ -71,7 +83,6 @@ def checkout():
                             json={"invoice_id": invoice_id, "payment_method": payment_method})
         if resp.status_code != 200:
             logger.error(f"Payment failed")
-            # КОМПЕНСАЦИЯ: отменить счёт + вернуть остатки
             compensate_invoice(invoice_id)
             compensate_reservation(tariff_ids)
             return jsonify({"error": "Payment failed", "details": resp.json()}), 400
@@ -93,15 +104,12 @@ def checkout():
     }), 200
 
 def compensate_reservation(tariff_ids):
-    """Вернуть остатки (компенсация)"""
     try:
-        # Здесь можно вызвать API возврата остатков
         logger.info(f"Compensating reservation for tariffs: {tariff_ids}")
     except Exception as e:
         logger.error(f"Compensation failed: {e}")
 
 def compensate_invoice(invoice_id):
-    """Отменить счёт"""
     try:
         requests.patch(f"{INVOICE_URL}/api/invoices/{invoice_id}/cancel", timeout=2)
         logger.info(f"Invoice {invoice_id} cancelled")
@@ -117,6 +125,15 @@ def get_status(invoice_id):
         if invoice:
             return jsonify(invoice), 200
         return jsonify({"error": "Not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
+
+@app.route('/api/tariffs', methods=['GET'])
+def proxy_tariffs():
+    """Прокси для получения тарифов с фронтенда"""
+    try:
+        resp = requests.get(f"{TARIFF_URL}/api/tariffs")
+        return jsonify(resp.json()), resp.status_code
     except Exception as e:
         return jsonify({"error": str(e)}), 503
 
