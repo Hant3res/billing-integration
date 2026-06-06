@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY orchestrator_service.py .
 COPY index.html .
 
+RUN mkdir -p logs
+
 EXPOSE 5000
 
 CMD ["python", "orchestrator_service.py"]
