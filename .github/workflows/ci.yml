@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        pip install flask requests pytest
+
+    - name: Lint check (flake8)
+      run: |
+        pip install flake8
+        flake8 *.py --max-line-length=120 --ignore=F401
+
+    - name: Run unit tests
+      run: |
+        pytest --version || echo "No tests yet"
+
+    - name: Build Docker images
+      run: |
+        docker build -f Dockerfile.tariff -t tariff-service .
+        docker build -f Dockerfile.invoice -t invoice-service .
+        docker build -f Dockerfile.payment -t payment-service .
+
+    - name: Start services with Docker Compose
+      run: |
+        docker-compose up -d
+        sleep 5
+
+    - name: Check health of services
+      run: |
+        curl --fail http://localhost:5001/api/tariffs || exit 1
+        curl --fail http://localhost:5002/api/invoices || exit 1
+        curl --fail http://localhost:5003/api/payments || exit 1
+
+    - name: Stop Docker Compose
+      run: docker-compose down

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # Модуль А: Тарифы / Услуги (порт 5001)
+  tariff-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.tariff
+    ports:
+      - "5001:5001"
+    environment:
+      - FLASK_ENV=development
+    networks:
+      - billing-network
+
+  # Модуль Б: Счета (порт 5002)
+  invoice-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.invoice
+    ports:
+      - "5002:5002"
+    environment:
+      - FLASK_ENV=development
+      - TARIFF_SERVICE_URL=http://tariff-service:5001
+    depends_on:
+      - tariff-service
+    networks:
+      - billing-network
+
+  # Модуль В: Платежи (порт 5003)
+  payment-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.payment
+    ports:
+      - "5003:5003"
+    environment:
+      - FLASK_ENV=development
+      - INVOICE_SERVICE_URL=http://invoice-service:5002
+    depends_on:
+      - invoice-service
+    networks:
+      - billing-network
+
+networks:
+  billing-network:
+    driver: bridge
