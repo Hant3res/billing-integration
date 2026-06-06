@@ -26,7 +26,7 @@ class Invoice(db.Model):
         return {
             "id": self.id,
             "client_id": self.client_id,
-            "tariff_ids": json.loads(self.tariff_ids),
+            "tariff_ids": json.loads(self.tariff_ids) if self.tariff_ids else [],
             "total_amount": self.total_amount,
             "currency": self.currency,
             "status": self.status,
@@ -74,6 +74,17 @@ def mark_paid(invoice_id):
     if not invoice:
         return jsonify({"error": "Not found"}), 404
     invoice.status = 'paid'
+    db.session.commit()
+    return jsonify(invoice.to_dict()), 200
+
+@app.route('/api/invoices/<int:invoice_id>/cancel', methods=['PATCH'])
+def cancel_invoice(invoice_id):
+    invoice = Invoice.query.get(invoice_id)
+    if not invoice:
+        return jsonify({"error": "Not found"}), 404
+    if invoice.status == 'paid':
+        return jsonify({"error": "Cannot cancel paid invoice"}), 400
+    invoice.status = 'cancelled'
     db.session.commit()
     return jsonify(invoice.to_dict()), 200
 

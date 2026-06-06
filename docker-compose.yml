@@ -65,6 +65,23 @@ services:
     networks:
       - billing-network
 
+  orchestrator-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    ports:
+      - "5000:5000"
+    environment:
+      - TARIFF_SERVICE_URL=http://tariff-service:5001
+      - INVOICE_SERVICE_URL=http://invoice-service:5002
+      - PAYMENT_SERVICE_URL=http://payment-service:5003
+    depends_on:
+      - tariff-service
+      - invoice-service
+      - payment-service
+    networks:
+      - billing-network
+
 volumes:
   mssql_data:
 
