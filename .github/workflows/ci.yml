@@ -2,17 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ main, master ]
 
 jobs:
-  test-and-build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v3
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -21,33 +20,32 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install flask requests pytest
-
-    - name: Lint check (flake8)
-      run: |
-        pip install flake8
-        flake8 *.py --max-line-length=120 --ignore=F401
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
 
     - name: Run unit tests
       run: |
-        pytest --version || echo "No tests yet"
+        pytest tests/unit/ -v --cov=. --cov-report=xml
 
-    - name: Build Docker images
+    - name: Start Docker services
       run: |
-        docker build -f Dockerfile.tariff -t tariff-service .
-        docker build -f Dockerfile.invoice -t invoice-service .
-        docker build -f Dockerfile.payment -t payment-service .
+        docker-compose up -d --build
+        sleep 30
 
-    - name: Start services with Docker Compose
+    - name: Run integration tests
       run: |
-        docker-compose up -d
-        sleep 5
+        pytest tests/integration/ -v
 
-    - name: Check health of services
+    - name: Run E2E tests
       run: |
-        curl --fail http://localhost:5001/api/tariffs || exit 1
-        curl --fail http://localhost:5002/api/invoices || exit 1
-        curl --fail http://localhost:5003/api/payments || exit 1
+        pytest tests/e2e/ -v
 
-    - name: Stop Docker Compose
-      run: docker-compose down
+    - name: Stop Docker services
+      run: |
+        docker-compose down
+
+    - name: Upload coverage report
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
