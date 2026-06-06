@@ -1,9 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import os
-import requests
+import redis
+import json
+import time
 
 app = Flask(__name__)
+
+# Подключение к Redis
+redis_client = redis.Redis.from_url(os.getenv('REDIS_URL', 'redis://localhost:6379'), decode_responses=True)
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'mssql+pyodbc://sa:YourStrongPass123@mssql:1433/billing_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes')
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
@@ -40,12 +45,32 @@ with app.app_context():
         for t in test_data:
             db.session.add(t)
         db.session.commit()
+        # Очистить кэш при добавлении данных
+        redis_client.delete('tariffs')
         print("Test data inserted")
 
 @app.route('/api/tariffs', methods=['GET'])
 def get_tariffs():
+    start_time = time.time()
+    
+    # Пытаемся получить из кэша
+    cached = redis_client.get('tariffs')
+    if cached:
+        elapsed = (time.time() - start_time) * 1000
+        print(f"[CACHE HIT] Response time: {elapsed:.2f}ms")
+        return jsonify(json.loads(cached)), 200
+    
+    # Если нет в кэше - запрос в БД
     tariffs = Tariff.query.all()
-    return jsonify({"tariffs": [t.to_dict() for t in tariffs]}), 200
+    result = {"tariffs": [t.to_dict() for t in tariffs]}
+    
+    # Сохраняем в кэш на 5 минут
+    redis_client.setex('tariffs', 300, json.dumps(result))
+    
+    elapsed = (time.time() - start_time) * 1000
+    print(f"[CACHE MISS] DB query time: {elapsed:.2f}ms")
+    
+    return jsonify(result), 200
 
 @app.route('/api/tariffs/<int:tariff_id>', methods=['GET'])
 def get_tariff(tariff_id):
@@ -82,19 +107,15 @@ def reserve_stock():
             tariff.stock -= 1
     db.session.commit()
     
+    # Инвалидируем кэш после изменения данных
+    redis_client.delete('tariffs')
+    
     return jsonify({"reserved": True, "tariff_ids": tariff_ids}), 200
 
-@app.route('/api/tariffs', methods=['POST'])
-def create_tariff():
-    data = request.get_json()
-    tariff = Tariff(
-        name=data['name'],
-        price=data['price'],
-        stock=data.get('stock', 10)
-    )
-    db.session.add(tariff)
-    db.session.commit()
-    return jsonify(tariff.to_dict()), 201
+@app.route('/api/tariffs/clear_cache', methods=['POST'])
+def clear_cache():
+    redis_client.delete('tariffs')
+    return jsonify({"status": "cache cleared"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)

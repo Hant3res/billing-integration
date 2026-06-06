@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# Установка ODBC Driver для SQL Server (Debian 12)
 RUN apt-get update && apt-get install -y \
     curl \
     gnupg2 \

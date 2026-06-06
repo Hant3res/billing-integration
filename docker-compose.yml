@@ -17,6 +17,13 @@ services:
     networks:
       - billing-network
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - billing-network
+
   tariff-service:
     build:
       context: .
@@ -25,9 +32,12 @@ services:
       - "5001:5001"
     environment:
       - DATABASE_URL=mssql+pyodbc://sa:YourStrongPass123@mssql:1433/billing_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+      - REDIS_URL=redis://redis:6379
     depends_on:
       mssql:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - billing-network
 
