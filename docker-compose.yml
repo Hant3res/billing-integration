@@ -1,12 +1,33 @@
-version: '3.8'
-
 services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "YourStrongPass123"
+      MSSQL_PID: "Express"
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "YourStrongPass123", "-C", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - billing-network
+
   tariff-service:
     build:
       context: .
       dockerfile: Dockerfile.tariff
     ports:
       - "5001:5001"
+    environment:
+      - DATABASE_URL=mssql+pyodbc://sa:YourStrongPass123@mssql:1433/billing_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
+    depends_on:
+      mssql:
+        condition: service_healthy
     networks:
       - billing-network
 
@@ -17,9 +38,13 @@ services:
     ports:
       - "5002:5002"
     environment:
+      - DATABASE_URL=mssql+pyodbc://sa:YourStrongPass123@mssql:1433/billing_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
       - TARIFF_SERVICE_URL=http://tariff-service:5001
     depends_on:
-      - tariff-service
+      mssql:
+        condition: service_healthy
+      tariff-service:
+        condition: service_started
     networks:
       - billing-network
 
@@ -30,28 +55,18 @@ services:
     ports:
       - "5003:5003"
     environment:
+      - DATABASE_URL=mssql+pyodbc://sa:YourStrongPass123@mssql:1433/billing_db?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes
       - INVOICE_SERVICE_URL=http://invoice-service:5002
     depends_on:
-      - invoice-service
+      mssql:
+        condition: service_healthy
+      invoice-service:
+        condition: service_started
     networks:
       - billing-network
 
-  orchestrator-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.orchestrator
-    ports:
-      - "5000:5000"
-    environment:
-      - TARIFF_SERVICE_URL=http://tariff-service:5001
-      - INVOICE_SERVICE_URL=http://invoice-service:5002
-      - PAYMENT_SERVICE_URL=http://payment-service:5003
-    depends_on:
-      - tariff-service
-      - invoice-service
-      - payment-service
-    networks:
-      - billing-network
+volumes:
+  mssql_data:
 
 networks:
   billing-network:
